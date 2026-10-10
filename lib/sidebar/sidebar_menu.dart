@@ -13,8 +13,32 @@ class SidebarMenuItem {
     this.icon,
     this.checked = false,
     this.destructive = false,
-  });
+  }) : divider = false,
+       heading = false;
 
+  /// A line between groups of items.
+  const SidebarMenuItem.divider()
+    : label = '',
+      onSelected = _none,
+      icon = null,
+      checked = false,
+      destructive = false,
+      divider = true,
+      heading = false;
+
+  /// A faint title over the items after it; not an item itself.
+  const SidebarMenuItem.heading(this.label)
+    : onSelected = _none,
+      icon = null,
+      checked = false,
+      destructive = false,
+      divider = false,
+      heading = true;
+
+  static void _none() {}
+
+  final bool divider;
+  final bool heading;
   final String label;
   final VoidCallback onSelected;
   final IconData? icon;
@@ -133,7 +157,22 @@ class SidebarMenuState extends State<SidebarMenu> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final item in items)
-            _MenuRow(item: item, onTap: () => _select(item)),
+            if (item.divider)
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                color: colors['menu.separatorBackground'],
+              )
+            else if (item.heading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                child: Text(
+                  item.label,
+                  style: TextStyle(color: AppColors.textFaint, fontSize: 11.5),
+                ),
+              )
+            else
+              _MenuRow(item: item, onTap: () => _select(item)),
         ],
       ),
     );

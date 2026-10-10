@@ -60,12 +60,15 @@ import 'platform/open_requests.dart';
 import 'platform/shell_command.dart';
 import 'search/conversation_search.dart';
 import 'search/search_palette.dart';
+import 'scheduled/scheduled_tasks_view.dart';
 import 'settings/app_settings.dart';
 import 'settings/data_dir_startup.dart';
 import 'settings/jsonc_file.dart';
 import 'settings/settings_dialog.dart';
 import 'settings/shell_command_actions.dart';
 import 'sidebar/sidebar.dart';
+import 'sidebar/sidebar_rail.dart';
+import 'customize/customize_nav.dart';
 import 'theme/codicons.dart';
 import 'theme/app_theme.dart';
 import 'theme/workbench_theme.dart' show WorkbenchThemeService, themeColors;
@@ -95,6 +98,7 @@ import 'workspace/title_bar_double_click.dart';
 import 'workspace/window_controls.dart';
 import 'workspace/window_header/window_header.dart';
 import 'workspace/workspace.dart';
+import 'workspace/create_project_dialog.dart';
 import 'workspace/workspace_dialog.dart';
 
 /// The window: the agents sidebar on the left, the selected agent's chat
@@ -183,12 +187,14 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// The border between sidebar and chat: a line at the left of a strip
   /// this wide, which takes the resize drag.
   static const _handleWidth = 5.0;
+  static const _sidebarRailWidth = 48.0;
 
   /// The width set by dragging. Shown as [_shownWidth], which a narrow
   /// window may cap below it for now. A drag sets it without building the
   /// window again: only the columns are laid out anew, the sidebar and the
   /// chat as they were (built again each move, they would lag the pointer).
   final ValueNotifier<double> _width = ValueNotifier(260);
+  SidebarRailPage _sidebarRailPage = SidebarRailPage.home;
 
   /// Of the window, from the last layout.
   double _windowWidth = double.infinity;
@@ -199,6 +205,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   double get _maxWidth => math.min(
     Workbench.maxSidebarWidth,
     _windowWidth -
+        _sidebarRailWidth -
         (_bothSides ? _sidePanelRoom : Workbench.sidebarWindowMargin),
   );
 
@@ -240,7 +247,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// Whether the window has the docked sidebar, at its least, beside the
   /// conversations and the side panel, at theirs.
   bool get _roomForSides =>
-      _windowWidth - _sidePanelRoom >= Workbench.minSidebarWidth;
+      _windowWidth - _sidePanelRoom - _sidebarRailWidth >=
+      Workbench.minSidebarWidth;
 
   /// Both asked for in a wide window too narrow for the two.
   bool get _sidesClash =>
@@ -956,7 +964,12 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   }
 
   void _closeCustomize() {
-    if (_customizing) setState(() => _customizing = false);
+    if (_customizing || _sidebarRailPage == SidebarRailPage.plugins) {
+      setState(() {
+        _customizing = false;
+        _sidebarRailPage = SidebarRailPage.home;
+      });
+    }
   }
 
   bool _paletteOpen = false;
@@ -2075,7 +2088,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// The sidebar docked beside [body] (by default the chat's panes).
   Widget _buildWide({Widget? body}) {
     // Built once for the widths a drag goes through (see [_width]).
-    final sidebar = _buildSidebar();
+    final sidebar = _buildSidebarContent();
     final panes = body ?? _buildPanes(showToggle: !_sidebarDocked);
     final row = ValueListenableBuilder(
       valueListenable: _width,
@@ -2085,13 +2098,19 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           AnimatedContainer(
             duration: _dragging ? Duration.zero : _duration,
             curve: Curves.easeOutCubic,
-            width: _sidebarDocked ? _shownWidth : 0,
+            width: _sidebarDocked ? _shownWidth + _sidebarRailWidth : 0,
             child: ClipRect(
               child: OverflowBox(
                 alignment: Alignment.centerRight,
-                minWidth: _shownWidth,
-                maxWidth: _shownWidth,
-                child: sidebar,
+                minWidth: _shownWidth + _sidebarRailWidth,
+                maxWidth: _shownWidth + _sidebarRailWidth,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildSidebarRail(),
+                    SizedBox(width: _shownWidth, child: sidebar),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2158,8 +2177,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
             builder: (context, shown, child) => Positioned(
               top: 0,
               bottom: 0,
-              left: -(_shownWidth + handleWidth + 24) * (1 - shown),
-              width: _shownWidth + handleWidth,
+              left:
+                  -(_shownWidth + _sidebarRailWidth + handleWidth + 24) *
+                  (1 - shown),
+              width: _shownWidth + _sidebarRailWidth + handleWidth,
               child: child!,
             ),
             child: sidebar == null
@@ -2167,6 +2188,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      _buildSidebarRail(),
                       SizedBox(width: _shownWidth, child: sidebar),
                       _buildResizeHandle(),
                     ],
@@ -2185,7 +2207,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                   ),
                   // Over the chat, not the material: the tint alone would
                   // show the chat through.
-                  child: _opaque(_buildSidebar(onOpened: _closeDrawer)),
+                  child: _opaque(_buildSidebarContent(onOpened: _closeDrawer)),
                 )
               : null,
         ),
@@ -2217,6 +2239,38 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   static Widget _conversation(Widget child) =>
       ColoredBox(color: AppColors.conversationSurface, child: child);
 
+  Widget _buildSidebarRail() =>
+      SidebarRail(page: _sidebarRailPage, onSelect: _selectSidebarPage);
+
+  Widget _buildSidebarContent({VoidCallback? onOpened}) {
+    if (_sidebarRailPage == SidebarRailPage.scheduled) {
+      return const ScheduledTasksView();
+    }
+    // Customize opened from the rail: its kinds in the sidebar, as Codex's.
+    if (_customizing && _sidebarRailPage == SidebarRailPage.plugins) {
+      return CustomizeNav(
+        kind: _customizeKind,
+        onSelect: (kind) => _showCustomize(kind),
+      );
+    }
+    return _buildSidebar(onOpened: onOpened);
+  }
+
+  void _selectSidebarPage(SidebarRailPage page) {
+    if (page == SidebarRailPage.plugins) {
+      if (widget.customizations == null) return;
+      if (_customizing) {
+        _closeCustomize();
+      } else {
+        _showCustomize();
+        setState(() => _sidebarRailPage = page);
+      }
+      return;
+    }
+    _closeCustomize();
+    setState(() => _sidebarRailPage = page);
+  }
+
   Widget _buildSidebar({VoidCallback? onOpened}) {
     // An agent's window shows what is picked or made here in its place;
     // the chat's window and Customize are not its.
@@ -2237,6 +2291,9 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         onOpened?.call();
       },
       onOpenFolder: WindowControls.canPickDirectory ? _openFolder : null,
+      onCreateProject: WindowControls.canPickDirectory
+          ? () => unawaited(_createProject())
+          : null,
       onOpenSettings: () => unawaited(openSettings()),
       updates: widget.settings?.updates?.service,
       onUpdate: _restartToUpdate,
@@ -2247,7 +2304,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       },
       onCustomize: agent != null || widget.customizations == null
           ? null
-          : () => _customizing ? _closeCustomize() : _showCustomize(),
+          : () => _selectSidebarPage(SidebarRailPage.plugins),
       customizing: _customizing,
       drag: _drag,
     );
@@ -2494,6 +2551,63 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         },
       ).start(),
     );
+  }
+
+  /// Create Project: its name and folder (see [CreateProjectDialog]),
+  /// then a new agent there.
+  Future<void> _createProject() async {
+    final project = await showCreateProjectDialog(
+      context,
+      workspace: _workspace,
+      pickRemote: _pickRemoteFolder,
+    );
+    if (project == null || !mounted) return;
+    _closeDrawer();
+  }
+
+  /// A folder on [host] browsed to (a host picked first when null), as
+  /// Open Remote Project… does; null when the pick is dismissed.
+  Future<String?> _pickRemoteFolder(String? host) {
+    final picked = Completer<String?>();
+    // Each step's pick hides as the next shows: dismissed only when none
+    // showed after it.
+    var shown = 0;
+    final flow = OpenRemoteFlow(
+      show: (pick) {
+        final step = ++shown;
+        showQuickPick(
+          IdeQuickPick(
+            items: pick.items,
+            itemsFor: pick.itemsFor,
+            placeholder: pick.placeholder,
+            activeItems: pick.activeItems,
+            matchOnDescription: pick.matchOnDescription,
+            sortByLabel: pick.sortByLabel,
+            onDidChangeActive: pick.onDidChangeActive,
+            onDidChangeValue: pick.onDidChangeValue,
+            onDidAccept: pick.onDidAccept,
+            onDidHide: () {
+              pick.onDidHide?.call();
+              Timer(const Duration(milliseconds: 100), () {
+                if (step == shown && !picked.isCompleted) {
+                  picked.complete(null);
+                }
+              });
+            },
+          ),
+        );
+      },
+      l10n: context.l10n,
+      onOpen: (location) {
+        if (!picked.isCompleted) picked.complete(location);
+      },
+    );
+    if (host == null) {
+      unawaited(flow.start());
+    } else {
+      flow.startAt(host);
+    }
+    return picked.future;
   }
 
   Future<void> _openFolder() async {
@@ -2811,6 +2925,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           ? AppMetrics.trafficLightsWidth + 8
           : 12.0,
       onOpenFile: (path) => _openIdeFiles([path]),
+      showKinds: showToggle || _sidebarRailPage != SidebarRailPage.plugins,
     );
   }
 

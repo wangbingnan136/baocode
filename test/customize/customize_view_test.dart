@@ -13,7 +13,9 @@ import 'package:baocode/customize/customize_view.dart';
 import 'package:baocode/ide/ide_code_editor.dart';
 import 'package:baocode/keybindings/keybinding_service.dart';
 import 'package:baocode/main.dart';
+import 'package:baocode/customize/customize_nav.dart';
 import 'package:baocode/sidebar/sidebar.dart';
+import 'package:baocode/sidebar/sidebar_rail.dart';
 import 'package:baocode/workspace/workspace.dart';
 
 /// Skills kept in memory, by file.
@@ -113,6 +115,16 @@ Future<Workspace> _pumpApp(
 Finder _inSidebar(Finder finder) =>
     find.descendant(of: find.byType(Sidebar), matching: finder);
 
+/// Customize's kinds, listed in the sidebar while it shows.
+Finder _inNav(Finder finder) =>
+    find.descendant(of: find.byType(CustomizeNav), matching: finder);
+
+/// The rail's icon that opens Customize, and closes it.
+Finder get _railCustomize => find.descendant(
+  of: find.byType(SidebarRail),
+  matching: find.bySemanticsLabel('Plugins'),
+);
+
 Finder _inView(Finder finder) =>
     find.descendant(of: find.byType(CustomizeView), matching: finder);
 
@@ -135,9 +147,12 @@ void main() {
     expect(find.byType(ChatScreen), findsNothing);
     expect(_inView(find.text('pdf')), findsOneWidget);
     expect(_inView(find.text('Reads PDF files')), findsOneWidget);
-    for (final chip in ['Plugins', 'MCPs', 'Skills', 'Subagents', 'Rules']) {
-      expect(_inView(find.text(chip)), findsOneWidget);
+    // Its kinds in the sidebar, as Codex lists them; the view titled by
+    // the one shown.
+    for (final kind in ['Plugins', 'MCPs', 'Skills', 'Subagents', 'Rules']) {
+      expect(_inNav(find.text(kind)), findsOneWidget);
     }
+    expect(_inView(find.text('Skills')), findsOneWidget);
 
     // Searching keeps the ones that match.
     await tester.enterText(_inView(find.byType(TextField)), 'docx');
@@ -147,7 +162,15 @@ void main() {
     await tester.pump();
     expect(_inView(find.text('Reads PDF files')), findsOneWidget);
 
-    // An agent picked in the sidebar shows instead.
+    // Home on the rail lists the agents again; one picked shows instead.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SidebarRail),
+        matching: find.bySemanticsLabel('Home'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(CustomizeView), findsNothing);
     await tester.tap(_inSidebar(find.textContaining('Rate limit per API key')));
     await tester.pumpAndSettle();
     expect(find.byType(CustomizeView), findsNothing);
@@ -158,7 +181,7 @@ void main() {
     await _pumpApp(tester, _MemoryStore());
     await tester.pumpAndSettle();
     expect(find.byType(SidePanelRail), findsOneWidget);
-    final customize = _inSidebar(find.text('Customize'));
+    final customize = _railCustomize;
     await tester.tap(customize);
     await tester.pumpAndSettle();
     expect(find.byType(CustomizeView), findsOneWidget);
@@ -247,15 +270,15 @@ void main() {
     await tester.tap(_inSidebar(find.text('Customize')));
     await tester.pumpAndSettle();
 
-    await tester.tap(_inView(find.text('MCPs')));
+    await tester.tap(_inNav(find.text('MCPs')));
     await tester.pumpAndSettle();
     expect(_inView(find.textContaining('claude mcp add')), findsWidgets);
 
-    await tester.tap(_inView(find.text('Plugins')));
+    await tester.tap(_inNav(find.text('Plugins')));
     await tester.pumpAndSettle();
     expect(_inView(find.textContaining('/plugin')), findsOneWidget);
 
-    await tester.tap(_inView(find.text('Hooks')));
+    await tester.tap(_inNav(find.text('Hooks')));
     await tester.pumpAndSettle();
     expect(_inView(find.textContaining('"hooks"')), findsWidgets);
     await tester.tap(_inView(find.text('Edit settings.json')).first);

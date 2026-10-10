@@ -14,7 +14,9 @@ import 'package:baocode/ide/ide_hover.dart';
 import 'package:baocode/main.dart';
 import 'package:baocode/search/search_palette.dart';
 import 'package:baocode/chat/widgets/user_message_bubble.dart';
+import 'package:baocode/scheduled/scheduled_tasks_view.dart';
 import 'package:baocode/sidebar/sidebar.dart';
+import 'package:baocode/sidebar/sidebar_rail.dart';
 import 'package:baocode/theme/codicons.dart';
 import 'package:baocode/theme/workbench_theme.dart';
 import 'package:baocode/workspace/editor_launcher.dart';
@@ -35,6 +37,9 @@ Future<Workspace> pumpApp(WidgetTester tester, {double width = 1400}) async {
 
 Finder inSidebar(Finder finder) =>
     find.descendant(of: find.byType(Sidebar), matching: finder);
+
+Offset sidebarBorder(WidgetTester tester) =>
+    Offset(tester.getTopRight(find.byType(Sidebar)).dx + 2, 400);
 
 String chatTitle(WidgetTester tester) =>
     tester.widget<ChatScreen>(find.byType(ChatScreen)).title;
@@ -249,7 +254,7 @@ void main() {
     expect(dot(), findsNothing);
 
     // Grouped by status, it is at the top.
-    await tester.tap(inSidebar(find.text('By project')));
+    await tester.tap(inSidebar(find.bySemanticsLabel('Group by')));
     await tester.pump();
     await tester.tap(find.text('Status'));
     await tester.pump(const Duration(milliseconds: 200));
@@ -288,7 +293,7 @@ void main() {
     threadNamed(workspace, 'Rate limit per API key').updatedAt = now;
     threadNamed(workspace, 'Migrate auth middleware to JWT').updatedAt =
         DateTime(now.year, now.month, now.day - 1, 12);
-    await tester.tap(inSidebar(find.text('By project')));
+    await tester.tap(inSidebar(find.bySemanticsLabel('Group by')));
     await tester.pump();
     await tester.tap(find.text('Date'));
     await tester.pump(const Duration(milliseconds: 200));
@@ -625,6 +630,23 @@ void main() {
     expect(tester.getTopLeft(find.byType(ChatScreen)).dx, chatLeft);
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
+  testWidgets('the sidebar rail switches between home and scheduled tasks', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    expect(find.byType(SidebarRail), findsOneWidget);
+    expect(find.byType(Sidebar), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Scheduled tasks'));
+    await tester.pump();
+    expect(find.byType(ScheduledTasksView), findsOneWidget);
+    expect(find.byType(Sidebar), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Home'));
+    await tester.pump();
+    expect(find.byType(Sidebar), findsOneWidget);
+  });
+
   testWidgets('drags the border to resize', (tester) async {
     await pumpApp(tester);
     final border = Offset(tester.getTopRight(find.byType(Sidebar)).dx + 2, 400);
@@ -753,7 +775,7 @@ void main() {
   ) async {
     await pumpApp(tester);
     double width() => tester.getSize(find.byType(Sidebar)).width;
-    final gesture = await tester.startGesture(const Offset(262, 400));
+    final gesture = await tester.startGesture(sidebarBorder(tester));
     // Follows the pointer exactly, slop included.
     await gesture.moveBy(const Offset(40, 0));
     await tester.pump();
@@ -849,11 +871,11 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Show sidebar'));
     await tester.pumpAndSettle();
     expect(width(), 320);
-    expect(tester.getTopLeft(find.byType(Sidebar)).dx, 0);
+    expect(tester.getTopLeft(find.byType(Sidebar)).dx, 48);
 
     // Its border drags like the docked one, and a click on it keeps the
     // drawer open.
-    border = Offset(tester.getTopRight(find.byType(Sidebar)).dx + 2, 400);
+    border = sidebarBorder(tester);
     await tester.tapAt(border);
     await tester.pumpAndSettle();
     expect(find.byType(Sidebar), findsOneWidget);
@@ -915,23 +937,23 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Show sidebar'));
     await tester.pumpAndSettle();
-    expect(width(), 360);
-    final border = Offset(tester.getTopRight(find.byType(Sidebar)).dx + 2, 400);
+    expect(width(), 312);
+    final border = sidebarBorder(tester);
     expect(border.dx, lessThan(380));
     final gesture = await tester.startGesture(border);
     await gesture.moveBy(const Offset(15, 0));
     await tester.pump();
-    expect(width(), 360);
+    expect(width(), 312);
     await gesture.moveBy(const Offset(-75, 0));
     await tester.pump();
-    expect(width(), 300);
+    expect(width(), 252);
     await gesture.up();
     await tester.pumpAndSettle();
 
     // What was set within the cap is kept.
     tester.view.physicalSize = const Size(1400, 900);
     await tester.pumpAndSettle();
-    expect(width(), 300);
+    expect(width(), 252);
   });
 
   testWidgets('an open drawer follows the window as it grows', (tester) async {
@@ -945,7 +967,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Show sidebar'));
     await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(Sidebar)).width, 360);
+    expect(tester.getSize(find.byType(Sidebar)).width, 312);
 
     // Resizing the window: every frame fits, at the new width at once.
     for (final width in <double>[400, 420, 460, 600]) {
@@ -954,7 +976,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(
         tester.getSize(find.byType(Sidebar)).width,
-        (width - 20).clamp(0.0, 420.0),
+        (width - 20 - 48).clamp(0.0, 420.0),
       );
     }
   });
@@ -1052,6 +1074,46 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('Chat b1'), findsNWidgets(2));
     expect(find.text('/tmp/b'), findsOneWidget);
+  });
+
+  testWidgets('projects pin on top, rename in place and fold under '
+      'their heading, as Codex lists them', (tester) async {
+    final workspace = await pumpKept(
+      tester,
+      KeptCatalog([kept('a1', '/tmp/a', 1), kept('b1', '/tmp/b', 3)]),
+    );
+    double top(String text) =>
+        tester.getTopLeft(inSidebar(find.text(text))).dy;
+    expect(inSidebar(find.text('Projects')), findsOneWidget);
+    expect(top('a'), lessThan(top('b')));
+
+    // Pinned: above the others.
+    await pickFromMenu(tester, 'b', 'Pin');
+    expect(workspace.isProjectPinned(workspace.projectAt('/tmp/b')), isTrue);
+    expect(top('b'), lessThan(top('a')));
+
+    // Renamed in place: only the name shown, the folder stays.
+    await pickFromMenu(tester, 'b', 'Rename');
+    await tester.enterText(inSidebar(find.byType(TextField)), 'Backend');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(inSidebar(find.text('Backend')), findsOneWidget);
+    expect(workspace.projectAt('/tmp/b').name, 'Backend');
+    expect(keptThread(workspace, 'b1').project.name, 'Backend');
+
+    // The heading folds them all, and unfolds them.
+    await tester.tap(inSidebar(find.text('Projects')));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(inSidebar(find.text('Chat a1')), findsNothing);
+    expect(inSidebar(find.text('Chat b1')), findsNothing);
+    await tester.tap(inSidebar(find.text('Projects')));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(inSidebar(find.text('Chat a1')), findsOneWidget);
+
+    // A project without chats says so (a has the new agent load opened).
+    workspace.archiveAll(workspace.projectAt('/tmp/b'));
+    await tester.pump();
+    expect(inSidebar(find.text('No chats yet')), findsOneWidget);
   });
 
   testWidgets('a project header has a menu of what can be done there', (
